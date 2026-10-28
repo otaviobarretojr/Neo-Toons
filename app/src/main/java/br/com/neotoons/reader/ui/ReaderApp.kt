@@ -403,6 +403,8 @@ private fun ReaderView(
         }
         return
     }
+    var webMode by remember(chapter.id) { mutableStateOf(false) }
+    var webError by remember(chapter.id) { mutableStateOf<String?>(null) }
     val initial = if (progress?.chapterNumber == screen.chapter)
         progress.pageIndex.coerceIn(0, images.lastIndex) else 0
     key(chapter.id) {
@@ -438,9 +440,31 @@ private fun ReaderView(
                     Text("Abrir no site")
                 }
             }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { webMode = !webMode; webError = null }) {
+                    Icon(Icons.Default.Language, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (webMode) "Leitor normal" else "Modo compatível")
+                }
+                if (webMode) {
+                    Text("Sem rastreamento de página",
+                        style = MaterialTheme.typography.labelSmall)
+                }
+            }
+            if (webMode) {
+                webError?.let { message ->
+                    Text(message, color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                BrowserChapterReader(images, onError = { webError = it },
+                    modifier = Modifier.fillMaxSize())
+            } else {
             LazyColumn(state = state, modifier = Modifier.fillMaxSize()) {
                 items(images, key = { it.id.ifBlank { "page-${it.pageNumber}" } }) { image ->
-                    ReaderPage(image) {
+                    ReaderPage(image, onCompatibility = { webMode = true }) {
                         loadedPages[image.pageNumber] = true
                     }
                 }
@@ -460,13 +484,14 @@ private fun ReaderView(
                     }
                 }
             }
+            }
         }
     }
 }
 
 /** Reserva altura antes de chegar a imagem para que a LazyColumn não a descarte. */
 @Composable
-private fun ReaderPage(image: MangaImage, onLoaded: () -> Unit) {
+private fun ReaderPage(image: MangaImage, onCompatibility: () -> Unit, onLoaded: () -> Unit) {
     val context = LocalContext.current
     var attempt by remember(image.imageUrl) { mutableIntStateOf(0) }
     var ratio by remember(image.imageUrl) { mutableStateOf<Float?>(null) }
@@ -519,7 +544,18 @@ private fun ReaderPage(image: MangaImage, onLoaded: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 Text("Página ${image.pageNumber} indisponível", fontWeight = FontWeight.SemiBold)
                 Text(failure.orEmpty(), style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Domínio: " + (Uri.parse(image.imageUrl).host ?: "não identificado"),
+                    style = MaterialTheme.typography.labelSmall
+                )
                 Spacer(Modifier.height(8.dp))
+                Button(onClick = onCompatibility) {
+                    Icon(Icons.Default.Language, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Tentar modo compatível")
+                }
+                Spacer(Modifier.height(6.dp))
                 OutlinedButton(onClick = {
                     failure = null
                     loaded = false
@@ -540,6 +576,11 @@ private fun explainImageError(throwable: Throwable): String {
         "404" in messages -> "O arquivo de imagem não foi encontrado no servidor."
         "timeout" in messages || "timed out" in messages ->
             "O servidor demorou a responder. Verifique sua conexão e tente novamente."
+        throwable is javax.net.ssl.SSLHandshakeException || 
+            generateSequence(throwable) { it.cause }.any { it is javax.net.ssl.SSLHandshakeException } -> {
+            val root = generateSequence(throwable) { it.cause }.last()
+            "Falha de segurança HTTPS (${root.javaClass.simpleName})."
+        }
         else -> "Falha de imagem (${throwable.javaClass.simpleName})."
     }
 }

@@ -22,3 +22,14 @@ A compatibilidade com hosts externos de imagens depende das políticas de cada h
 ## APK de testes instalável em paralelo
 
 Os APKs debug do GitHub Actions podem receber certificados diferentes a cada execução. Para preservar a instalação e os favoritos do app original, o tipo `debug` agora usa o pacote independente `br.com.neotoons.reader.beta`, com o nome **Neo-Toons Beta**. O APK pode ser instalado ao lado do app original. Os dados locais das duas instalações são independentes. Para atualizações futuras com preservação de dados, configurar uma chave de assinatura estável guardada como segredo de CI.
+
+## 0.1.2 — Compatibilidade de servidores de imagem
+
+- Opção **Modo compatível** no leitor: usa Android WebView/Chromium somente para imagens HTTPS de capítulos, sem scripts ou armazenamento web.
+- Diagnóstico de falhas com domínio e causa final do erro TLS.
+- Em erro nativo oferece alternância para motor WebView.
+- Nenhum certificado inválido é aceito: o WebView cancela erros SSL.
+- O modo web não rastreia progresso de página (o progresso do leitor nativo continua).
+- Pacote de testes `.beta2` para instalar ao lado da versão Beta anterior, que usa chave debug potencialmente diferente a cada build.
+
+Se até o WebView não carregar a imagem, a origem HTTPS precisa ser corrigida pelo responsável pelo host ou pela integração autorizada; não se deve desativar verificação SSL.
