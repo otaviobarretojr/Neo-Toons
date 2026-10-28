@@ -1,0 +1,51 @@
+name: Backup Neo-Toons catalogue metadata
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_pages:
+        description: '0 = todas as páginas; 1 = teste rápido'
+        type: choice
+        options:
+          - '0'
+          - '1'
+        default: '0'
+  push:
+    paths:
+      - '.github/workflows/catalog-backup.yml'
+      - 'tools/catalog_sync/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: catalogue-metadata-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MAX_PAGES: ${{ github.event.inputs.max_pages || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Testar o sincronizador sem acesso à API
+        run: python -m unittest discover -s tools/catalog_sync/tests -v
+      - name: Consultar API pública com intervalo conservador
+        run: |
+          python tools/catalog_sync/sync_catalog.py \
+            --output-dir build/catalog-backup \
+            --delay-seconds 1.25 \
+            --max-pages "$MAX_PAGES"
+      - name: Guardar backup e relatório, inclusive em caso de bloqueio
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Neo-Toons-catalogo-metadados
+          path: build/catalog-backup/
+          if-no-files-found: warn
+          retention-days: 30
