@@ -47,7 +47,6 @@ import org.json.JSONObject;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.Set;
@@ -312,7 +311,7 @@ public final class MainActivity extends Activity {
             url = "https://" + query;
         } else {
             url = "https://www.google.com/search?q=" +
-                URLEncoder.encode(query, StandardCharsets.UTF_8);
+                Uri.encode(query);
         }
         address.clearFocus();
         ((InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE))
