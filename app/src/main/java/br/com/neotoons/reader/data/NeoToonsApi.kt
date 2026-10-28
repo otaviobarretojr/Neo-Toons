@@ -45,4 +45,5 @@ object ApiProvider {
         .client(client)
         .addConverterFactory(GsonConverterFactory.create())
         .build()
+        .create(NeoToonsApi::class.java)
 }
