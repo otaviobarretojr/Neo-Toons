@@ -14,7 +14,14 @@ android {
         versionCode = 2
         versionName = "0.1.1"
     }
-    buildTypes { release { isMinifyEnabled = false } }
+    buildTypes {
+        debug {
+            // Permite instalar o APK de testes sem remover o app original.
+            applicationIdSuffix = ".beta"
+            versionNameSuffix = "-beta"
+        }
+        release { isMinifyEnabled = false }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

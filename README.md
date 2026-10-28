@@ -18,3 +18,7 @@ A integração depende de autorização para acessar e apresentar o conteúdo fo
 - Capas com indicador de falha e sinopses recolhidas por padrão.
 
 A compatibilidade com hosts externos de imagens depende das políticas de cada host e requer teste no dispositivo.
+
+## APK de testes instalável em paralelo
+
+Os APKs debug do GitHub Actions podem receber certificados diferentes a cada execução. Para preservar a instalação e os favoritos do app original, o tipo `debug` agora usa o pacote independente `br.com.neotoons.reader.beta`, com o nome **Neo-Toons Beta**. O APK pode ser instalado ao lado do app original. Os dados locais das duas instalações são independentes. Para atualizações futuras com preservação de dados, configurar uma chave de assinatura estável guardada como segredo de CI.
