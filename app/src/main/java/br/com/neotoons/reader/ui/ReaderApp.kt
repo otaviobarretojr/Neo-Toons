@@ -1,6 +1,10 @@
 package br.com.neotoons.reader.ui
 
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.ui.platform.LocalContext
+import coil.request.ImageRequest
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -233,8 +237,7 @@ private fun MangaCard(manga: Manga, onClick: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = RoundedCornerShape(14.dp)) {
         Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            AsyncImage(model = manga.coverUrl, contentDescription = "Capa de ${manga.title}",
-                modifier = Modifier.size(90.dp, 126.dp), contentScale = ContentScale.Crop)
+            CoverImage(manga.coverUrl, Modifier.size(90.dp, 126.dp), manga.title)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(manga.title, fontWeight = FontWeight.SemiBold,
                     style = MaterialTheme.typography.titleMedium, maxLines = 3)
@@ -270,8 +273,7 @@ private fun LibraryView(
             items(progress, key = { "progress_${it.mangaId}" }) { p ->
                 Card(Modifier.fillMaxWidth().clickable { onContinue(p) }) {
                     Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        AsyncImage(model = p.coverUrl, contentDescription = null,
-                            modifier = Modifier.size(65.dp, 90.dp), contentScale = ContentScale.Crop)
+                        CoverImage(p.coverUrl, Modifier.size(65.dp, 90.dp), p.title)
                         Column {
                             Text(p.title, style = MaterialTheme.typography.titleMedium)
                             Text("Capítulo ${p.chapterNumber} · página ${p.pageIndex + 1}")
@@ -285,8 +287,7 @@ private fun LibraryView(
             items(favorites, key = { "favorite_${it.mangaId}" }) { fav ->
                 Card(Modifier.fillMaxWidth().clickable { onOpen(fav.slug) }) {
                     Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        AsyncImage(model = fav.coverUrl, contentDescription = null,
-                            modifier = Modifier.size(65.dp, 90.dp), contentScale = ContentScale.Crop)
+                        CoverImage(fav.coverUrl, Modifier.size(65.dp, 90.dp), fav.title)
                         Text(fav.title, style = MaterialTheme.typography.titleMedium)
                     }
                 }
@@ -313,8 +314,7 @@ private fun DetailView(
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                AsyncImage(model = manga.coverUrl, contentDescription = null,
-                    modifier = Modifier.size(126.dp, 180.dp), contentScale = ContentScale.Crop)
+                CoverImage(manga.coverUrl, Modifier.size(126.dp, 180.dp), manga.title)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Text(manga.title, style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold)
@@ -338,8 +338,20 @@ private fun DetailView(
             }
         }
         if (!manga.synopsis.isNullOrBlank()) {
-            item { Text("Sinopse", style = MaterialTheme.typography.titleMedium) }
-            item { Text(manga.synopsis) }
+            item {
+                var expanded by remember(manga.id) { mutableStateOf(false) }
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Sinopse", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = manga.synopsis,
+                        maxLines = if (expanded) Int.MAX_VALUE else 5,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    TextButton(onClick = { expanded = !expanded }) {
+                        Text(if (expanded) "Mostrar menos" else "Ler sinopse completa")
+                    }
+                }
+            }
         }
         item { Text("Capítulos", style = MaterialTheme.typography.titleLarge) }
         items(manga.chapters.orEmpty(), key = { it.id }) { chapter ->
@@ -357,14 +369,22 @@ private fun DetailView(
     }
 }
 
+
 @Composable
 private fun ReaderView(
     vm: ReaderViewModel, screen: Screen.Reading,
     progress: ReadingProgress?, onChapter: (String) -> Unit
 ) {
     val chapter = vm.chapter
+    val context = LocalContext.current
+    val originalUrl = remember(screen.slug, screen.chapter) {
+        "https://neotoons.com.br/obras/" +
+            Uri.encode(screen.slug) + "/" + Uri.encode(screen.chapter)
+    }
     if (vm.chapterLoading && chapter == null) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
         return
     }
     if (chapter == null || chapter.chapterNumber != screen.chapter) {
@@ -375,46 +395,172 @@ private fun ReaderView(
     }
     val images = remember(chapter.id) { chapter.pages.sortedBy { it.pageNumber } }
     if (images.isEmpty()) {
-        Text("Este capítulo não possui páginas disponíveis.",
-            modifier = Modifier.padding(24.dp))
+        Column(Modifier.fillMaxWidth().padding(20.dp)) {
+            Text("Este capítulo não possui páginas disponíveis na API.")
+            TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(originalUrl))) }) {
+                Text("Abrir no site")
+            }
+        }
         return
     }
     val initial = if (progress?.chapterNumber == screen.chapter)
         progress.pageIndex.coerceIn(0, images.lastIndex) else 0
     key(chapter.id) {
         val state = rememberLazyListState(initialFirstVisibleItemIndex = initial)
+        val loadedPages = remember(chapter.id) { mutableStateMapOf<Int, Boolean>() }
         LaunchedEffect(state, chapter.id) {
-            snapshotFlow { state.firstVisibleItemIndex }.distinctUntilChanged().collect { index ->
-                vm.saveProgress(screen.id, screen.slug, screen.title, screen.coverUrl,
-                    screen.chapter, index.coerceIn(0, images.lastIndex))
+            snapshotFlow {
+                val index = state.firstVisibleItemIndex.coerceIn(0, images.lastIndex)
+                index to (loadedPages[images[index].pageNumber] == true)
+            }.distinctUntilChanged().collect { (index, loaded) ->
+                if (loaded) {
+                    vm.saveProgress(screen.id, screen.slug, screen.title, screen.coverUrl,
+                        screen.chapter, index)
+                }
             }
         }
         Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().padding(10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Cap. ${chapter.chapterNumber}", fontWeight = FontWeight.Bold)
-                Text("${(state.firstVisibleItemIndex + 1).coerceAtMost(images.size)}/${images.size} páginas")
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text("Cap. ${chapter.chapterNumber}", fontWeight = FontWeight.Bold)
+                    Text("${(state.firstVisibleItemIndex + 1).coerceAtMost(images.size)}/${images.size} páginas",
+                        style = MaterialTheme.typography.labelMedium)
+                }
+                TextButton(onClick = {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(originalUrl)))
+                }) {
+                    Icon(Icons.Default.OpenInBrowser, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Abrir no site")
+                }
             }
             LazyColumn(state = state, modifier = Modifier.fillMaxSize()) {
-                items(images, key = { it.id }) { image ->
-                    AsyncImage(model = image.imageUrl,
-                        contentDescription = "Página ${image.pageNumber}",
-                        modifier = Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
+                items(images, key = { it.id.ifBlank { "page-${it.pageNumber}" } }) { image ->
+                    ReaderPage(image) {
+                        loadedPages[image.pageNumber] = true
+                    }
                 }
-                item {
-                    Row(Modifier.fillMaxWidth().padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly) {
-                        OutlinedButton(enabled = chapter.prevChapter != null,
-                            onClick = { chapter.prevChapter?.chapterNumber?.let(onChapter) }) {
-                            Text("Anterior")
-                        }
-                        Button(enabled = chapter.nextChapter != null,
-                            onClick = { chapter.nextChapter?.chapterNumber?.let(onChapter) }) {
-                            Text("Próximo")
-                        }
+                item(key = "chapter-actions") {
+                    Row(
+                        Modifier.fillMaxWidth().padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        OutlinedButton(
+                            enabled = chapter.prevChapter != null,
+                            onClick = { chapter.prevChapter?.chapterNumber?.let(onChapter) }
+                        ) { Text("Anterior") }
+                        Button(
+                            enabled = chapter.nextChapter != null,
+                            onClick = { chapter.nextChapter?.chapterNumber?.let(onChapter) }
+                        ) { Text("Próximo") }
                     }
                 }
             }
+        }
+    }
+}
+
+/** Reserva altura antes de chegar a imagem para que a LazyColumn não a descarte. */
+@Composable
+private fun ReaderPage(image: MangaImage, onLoaded: () -> Unit) {
+    val context = LocalContext.current
+    var attempt by remember(image.imageUrl) { mutableIntStateOf(0) }
+    var ratio by remember(image.imageUrl) { mutableStateOf<Float?>(null) }
+    var failure by remember(image.imageUrl) { mutableStateOf<String?>(null) }
+    var loaded by remember(image.imageUrl) { mutableStateOf(false) }
+    val request = remember(image.imageUrl, attempt) {
+        ImageRequest.Builder(context).data(image.imageUrl).crossfade(false).build()
+    }
+    val imageModifier = Modifier.fillMaxWidth().then(
+        ratio?.let { Modifier.aspectRatio(it) } ?: Modifier.height(440.dp)
+    )
+    Box(Modifier.fillMaxWidth()) {
+        AsyncImage(
+            model = request,
+            contentDescription = "Página ${image.pageNumber}",
+            modifier = imageModifier,
+            contentScale = ContentScale.FillWidth,
+            onSuccess = { state ->
+                val size = state.painter.intrinsicSize
+                if (size.width.isFinite() && size.height.isFinite() &&
+                    size.width > 0f && size.height > 0f) {
+                    ratio = (size.width / size.height).coerceIn(0.025f, 6f)
+                }
+                failure = null
+                loaded = true
+                onLoaded()
+            },
+            onError = { state ->
+                loaded = false
+                failure = explainImageError(state.result.throwable)
+            }
+        )
+        if (!loaded && failure == null) {
+            Box(Modifier.fillMaxWidth().height(440.dp),
+                contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Spacer(Modifier.height(12.dp))
+                    Text("Carregando página ${image.pageNumber}…")
+                }
+            }
+        }
+        if (failure != null) {
+            Column(
+                Modifier.fillMaxWidth().heightIn(min = 220.dp).padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(Icons.Default.BrokenImage, contentDescription = null)
+                Spacer(Modifier.height(8.dp))
+                Text("Página ${image.pageNumber} indisponível", fontWeight = FontWeight.SemiBold)
+                Text(failure.orEmpty(), style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = {
+                    failure = null
+                    loaded = false
+                    ratio = null
+                    attempt += 1
+                }) { Text("Tentar novamente") }
+            }
+        }
+    }
+}
+
+private fun explainImageError(throwable: Throwable): String {
+    val messages = generateSequence(throwable) { it.cause }
+        .mapNotNull { it.message }.joinToString(" ").lowercase()
+    return when {
+        "403" in messages || "401" in messages ->
+            "O servidor recusou esta imagem. Use 'Abrir no site' para consultar o original."
+        "404" in messages -> "O arquivo de imagem não foi encontrado no servidor."
+        "timeout" in messages || "timed out" in messages ->
+            "O servidor demorou a responder. Verifique sua conexão e tente novamente."
+        else -> "Falha de imagem (${throwable.javaClass.simpleName})."
+    }
+}
+
+/** Um erro de rede em uma capa não deve deixá-la como espaço vazio. */
+@Composable
+private fun CoverImage(url: String?, modifier: Modifier, title: String) {
+    var failed by remember(url) { mutableStateOf(false) }
+    Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center) {
+        if (url.isNullOrBlank() || failed) {
+            Icon(Icons.Default.BrokenImage, contentDescription = "Capa indisponível",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            AsyncImage(
+                model = url,
+                contentDescription = "Capa de $title",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                onError = { failed = true }
+            )
         }
     }
 }
