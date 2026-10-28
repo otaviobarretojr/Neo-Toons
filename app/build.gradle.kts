@@ -11,13 +11,13 @@ android {
         applicationId = "br.com.neotoons.reader"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 4
+        versionName = "0.1.3"
     }
     buildTypes {
         debug {
             // Permite instalar o APK de testes sem remover o app original.
-            applicationIdSuffix = ".beta2"
+            applicationIdSuffix = ".beta3"
             versionNameSuffix = "-beta"
         }
         release { isMinifyEnabled = false }

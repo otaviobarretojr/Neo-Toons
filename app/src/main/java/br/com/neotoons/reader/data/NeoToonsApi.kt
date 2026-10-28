@@ -23,6 +23,16 @@ interface NeoToonsApi {
     @GET("genres")
     suspend fun genres(): List<Genre>
 
+    @GET("genres")
+    suspend fun rawGenres(): com.google.gson.JsonArray
+
+    @GET("mangas")
+    suspend fun rawCatalogue(
+        @Query("page") page: Int,
+        @Query("limit") limit: Int = 24,
+        @Query("sortBy") sortBy: String = "newest"
+    ): com.google.gson.JsonObject
+
     @GET("mangas/{slug}")
     suspend fun manga(@Path("slug") slug: String): Manga
 

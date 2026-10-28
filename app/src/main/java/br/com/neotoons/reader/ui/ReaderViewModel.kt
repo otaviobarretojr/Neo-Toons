@@ -1,6 +1,12 @@
 package br.com.neotoons.reader.ui
 
 import android.app.Application
+import android.content.ContentResolver
+import android.net.Uri
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
@@ -44,6 +50,23 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         private set
     var chapterError by androidx.compose.runtime.mutableStateOf<String?>(null)
         private set
+
+    var backupRunning by androidx.compose.runtime.mutableStateOf(false)
+        private set
+    var backupReady by androidx.compose.runtime.mutableStateOf(false)
+        private set
+    var backupPage by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
+    var backupPages by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
+    var backupCount by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
+    var backupStatus by androidx.compose.runtime.mutableStateOf("")
+        private set
+    var backupError by androidx.compose.runtime.mutableStateOf<String?>(null)
+        private set
+    private var backupJob: Job? = null
+    private var backupFile: File? = null
 
     private var listJob: Job? = null
     private var detailJob: Job? = null
@@ -131,6 +154,70 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             repository.save(ReadingProgress(mangaId, slug, title, coverUrl, number, pageIndex))
         }
     }
+
+    fun startCatalogBackup() {
+        if (backupRunning) return
+        backupJob?.cancel()
+        backupReady = false
+        backupError = null
+        backupPage = 0
+        backupPages = 0
+        backupCount = 0
+        backupStatus = "Consultando o catálogo público…"
+        backupRunning = true
+        backupJob = viewModelScope.launch {
+            try {
+                val result = CatalogExporter(ApiProvider.service).export(
+                    getApplication<Application>().cacheDir
+                ) { page, totalPages, uniqueCount ->
+                    backupPage = page
+                    backupPages = totalPages
+                    backupCount = uniqueCount
+                    backupStatus = "Verificando os registros…"
+                }
+                backupFile = result.file
+                backupReady = true
+                backupStatus = "Backup validado e pronto para salvar."
+            } catch (e: CancellationException) {
+                backupStatus = "Coleta cancelada."
+                throw e
+            } catch (e: Exception) {
+                backupError = friendlyError(e)
+                backupStatus = "O backup não foi concluído; nenhum arquivo incompleto será salvo."
+            } finally {
+                backupRunning = false
+            }
+        }
+    }
+
+    fun cancelCatalogBackup() {
+        backupJob?.cancel()
+        backupRunning = false
+        backupReady = false
+    }
+
+    fun saveCatalogBackup(uri: Uri, resolver: ContentResolver) {
+        val file = backupFile
+        if (!backupReady || file == null || !file.exists()) {
+            backupError = "O arquivo temporário não está disponível. Gere um novo backup."
+            return
+        }
+        backupStatus = "Salvando no destino escolhido…"
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val output = resolver.openOutputStream(uri, "w")
+                        ?: throw java.io.IOException("Não foi possível abrir o destino.")
+                    output.use { stream -> file.inputStream().use { it.copyTo(stream) } }
+                }
+                backupStatus = "Arquivo salvo no destino escolhido."
+            } catch (e: Exception) {
+                backupError = "Falha ao salvar: ${e.message ?: e.javaClass.simpleName}"
+                backupStatus = "Você pode tentar salvar novamente."
+            }
+        }
+    }
+
     private fun friendlyError(e: Exception) = when(e) {
         is HttpException -> when(e.code()) {
             401, 403 -> "A API restringiu o acesso. Não tentaremos contornar o bloqueio."

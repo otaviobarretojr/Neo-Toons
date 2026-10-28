@@ -33,3 +33,15 @@ Os APKs debug do GitHub Actions podem receber certificados diferentes a cada exe
 - Pacote de testes `.beta2` para instalar ao lado da versão Beta anterior, que usa chave debug potencialmente diferente a cada build.
 
 Se até o WebView não carregar a imagem, a origem HTTPS precisa ser corrigida pelo responsável pelo host ou pela integração autorizada; não se deve desativar verificação SSL.
+
+## Exportação de catálogo pelo Android (Beta 0.1.3)
+
+Como o GitHub Actions recebeu 403 na API (embora o celular já consiga consultar o catálogo), a versão Beta 0.1.3 acrescenta um exportador na própria tela do catálogo, no ícone de download.
+
+1. Toque em **Exportar catálogo → Gerar backup**; mantenha o app aberto durante a coleta.
+2. O exportador consulta uma página por vez com intervalo conservador de 1,25 s, sem baixar imagens.
+3. Quando indicar **backup completo**, toque em **Salvar arquivo**.
+4. O seletor de arquivos do Android permite salvar em Downloads ou Google Drive, quando esse provedor estiver disponível.
+5. O arquivo somente é oferecido quando todas as obras foram recebidas, sem duplicações ou alteração do total. Em erro 401/403/429, não há contorno nem backup anunciado como completo.
+
+O arquivo JSON contém gêneros, metadados públicos de obras e pequenos resumos de capítulos do catálogo. Não contém imagens nem o texto/páginas dos capítulos. A Beta 0.1.3 usa sufixo de pacote `.beta3` para instalar sem substituir as versões de teste anteriores.

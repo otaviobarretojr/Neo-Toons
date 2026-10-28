@@ -3,6 +3,9 @@ package br.com.neotoons.reader.ui
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import java.time.LocalDate
 import androidx.compose.ui.platform.LocalContext
 import coil.request.ImageRequest
 import androidx.compose.foundation.*
@@ -48,6 +51,13 @@ fun ReaderApp(vm: ReaderViewModel = viewModel()) {
     var tab by remember { mutableIntStateOf(0) }
     val favorites by vm.favorites.collectAsStateWithLifecycle()
     val progress by vm.progress.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    var showBackupDialog by remember { mutableStateOf(false) }
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) vm.saveCatalogBackup(uri, context.contentResolver)
+    }
 
     LaunchedEffect(search, genre, status, order) {
         delay(if (search.isNotBlank()) 300L else 50L)
@@ -90,6 +100,9 @@ fun ReaderApp(vm: ReaderViewModel = viewModel()) {
                 },
                 actions = {
                     if (screen is Screen.Catalog) {
+                        IconButton(onClick = { showBackupDialog = true }) {
+                            Icon(Icons.Default.FileDownload, contentDescription = "Exportar catálogo")
+                        }
                         IconButton(onClick = { vm.refresh(search, genre, order, status) }) {
                             Icon(Icons.Default.Refresh, contentDescription = "Recarregar")
                         }
@@ -129,6 +142,57 @@ fun ReaderApp(vm: ReaderViewModel = viewModel()) {
             }
         }
     }
+
+    if (showBackupDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!vm.backupRunning) showBackupDialog = false },
+            title = { Text("Backup do catálogo") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "Exporta os títulos, sinopses, gêneros, capas (URLs) " +
+                        "e resumos de capítulos. Não baixa imagens nem capítulos completos."
+                    )
+                    if (vm.backupRunning) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Text("Página ${vm.backupPage} de ${vm.backupPages} · ${vm.backupCount} obras")
+                    }
+                    if (vm.backupStatus.isNotBlank()) {
+                        Text(vm.backupStatus, style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (vm.backupError != null) {
+                        Text(vm.backupError.orEmpty(),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (vm.backupReady) {
+                        Text("Backup completo: ${vm.backupCount} obras. " +
+                            "Ao salvar, escolha o Google Drive ou a pasta do celular.",
+                            style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            },
+            confirmButton = {
+                when {
+                    vm.backupRunning -> TextButton(onClick = { vm.cancelCatalogBackup() }) {
+                        Text("Cancelar coleta")
+                    }
+                    vm.backupReady -> Button(onClick = {
+                        exportLauncher.launch("NeoToons-catalogo-${LocalDate.now()}.json")
+                    }) {
+                        Text("Salvar arquivo")
+                    }
+                    else -> Button(onClick = { vm.startCatalogBackup() }) {
+                        Text("Gerar backup")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBackupDialog = false }) { Text("Fechar") }
+            }
+        )
+    }
+
 }
 
 @Composable
